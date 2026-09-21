@@ -1,0 +1,12 @@
+# Datos de runtime de Docker / Postgres
+pgdata/
+postgres_data/
+
+# Archivos temporales del sistema
+*.log
+.DS_Store
+Thumbs.db
+
+# Entornos virtuales de Python (script auxiliar del diagrama ER)
+.venv/
+__pycache__/
