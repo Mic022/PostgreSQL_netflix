@@ -8,26 +8,53 @@
 -- Crea la base de datos netflix_db, la tabla de transito
 -- (netflix_staging) y el esquema relacional normalizado hasta 3FN.
 --
--- Ejecucion recomendada (desde la raiz del repositorio):
---   psql -h localhost -p 5432 -U admin -d postgres -f sql/01_creacion_base_datos.sql
+-- SQL puro: se ejecuta tal cual en el Query Tool de pgAdmin (y en psql).
+-- No usa meta-comandos de psql (\connect, \copy, \i ...).
+--
+-- CREATE DATABASE no puede ejecutarse dentro de una transaccion ni junto
+-- a otras sentencias, por eso el script se corre en DOS PASOS:
+--
+--   PASO 1 (conectado a la BD "postgres"):
+--       ejecutar solo la seccion 1 (CREATE DATABASE).
+--       En pgAdmin: seleccionar la sentencia y pulsar F5.
+--       Luego clic derecho en Databases > Refresh.
+--
+--   PASO 2 (conectado a la BD "netflix_db"):
+--       abrir un Query Tool sobre netflix_db y ejecutar desde la
+--       seccion 2 hasta el final del archivo (F5).
+--
+-- Equivalente en psql:
+--   psql -h localhost -U admin -d postgres  -c "CREATE DATABASE netflix_db WITH ENCODING 'UTF8'"
+--   psql -h localhost -U admin -d netflix_db -f sql/01_creacion_base_datos.sql
+--   (con -f, la seccion 1 muestra "already exists": es inofensivo si no se
+--    usa ON_ERROR_STOP; el resto del script continua)
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 1. Creacion de la base de datos
+-- 1. Creacion de la base de datos  (PASO 1 - conectado a "postgres")
 -- ---------------------------------------------------------------------
 -- DROP DATABASE IF EXISTS netflix_db;  -- descomentar para reinicios limpios
 CREATE DATABASE netflix_db
     WITH ENCODING 'UTF8';
 
--- A partir de aqui, todas las sentencias se ejecutan dentro de netflix_db.
--- Si se corre este archivo completo con psql, \connect cambia de sesion.
-\connect netflix_db
+-- ---------------------------------------------------------------------
+-- PASO 2 - conectado a "netflix_db". Guarda de seguridad: evita crear
+-- el esquema por error dentro de otra base de datos.
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF current_database() <> 'netflix_db' THEN
+        RAISE EXCEPTION 'Conectese a netflix_db antes de ejecutar el PASO 2 (BD actual: %)',
+                        current_database();
+    END IF;
+END
+$$;
 
 -- ---------------------------------------------------------------------
 -- 2. Tabla de transito (staging) para el proceso ETL
 -- ---------------------------------------------------------------------
 -- Refleja el CSV fuente tal cual, sin tipar ni normalizar, para permitir
--- una carga masiva simple (COPY/\copy) y transformaciones posteriores
+-- una carga masiva simple (COPY) y transformaciones posteriores
 -- en SQL puro (Fase IV).
 DROP TABLE IF EXISTS netflix_staging;
 CREATE TABLE netflix_staging (
@@ -86,6 +113,8 @@ CREATE TABLE people (
 );
 COMMENT ON TABLE people IS
     'Catalogo unico de personas; una misma persona puede participar como director y/o actor.';
+-- Unicidad sin distinguir mayusculas: evita "Adam Devine" y "Adam DeVine" como personas distintas
+CREATE UNIQUE INDEX uq_people_full_name_ci ON people (LOWER(full_name));
 
 -- ---------------------------------------------------------------------
 -- 4. Entidad principal: titulos y producciones audiovisuales
